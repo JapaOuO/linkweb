@@ -165,3 +165,6 @@ aparelhos, será necessário um agente Python instalado na rede da escola.
 
 O botão `Dashboard` abre a página de análise, com gráficos de latência, jitter,
 download e upload, além de filtros por tablet/notebook/desktop e Wi-Fi/cabeada.
+
+Deploy contínuo: alterações enviadas para a branch `main` são publicadas
+automaticamente pela Vercel.

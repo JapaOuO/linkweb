@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import os
 import uuid
 
 from fastapi import FastAPI, HTTPException
@@ -13,6 +14,7 @@ from .monitor import MonitorManager
 
 store = FirebaseStore()
 manager = MonitorManager(store)
+DOWNLOAD_PAYLOAD = os.urandom(16 * 1024 * 1024)
 
 
 @asynccontextmanager
@@ -52,9 +54,16 @@ def health() -> dict[str, str]:
 
 @app.get("/api/measurement-download")
 def measurement_download() -> Response:
-    # A fixed payload makes the browser-side throughput calculation repeatable.
-    return Response(content=b"0" * (512 * 1024), media_type="application/octet-stream",
-                    headers={"Cache-Control": "no-store"})
+    # Random data prevents an intermediary from compressing the test payload.
+    return Response(
+        content=DOWNLOAD_PAYLOAD,
+        media_type="application/octet-stream",
+        headers={
+            "Cache-Control": "no-store, no-transform",
+            "Content-Encoding": "identity",
+            "Content-Length": str(len(DOWNLOAD_PAYLOAD)),
+        },
+    )
 
 
 @app.post("/api/measurement-upload")

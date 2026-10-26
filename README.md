@@ -21,6 +21,8 @@ Estrutura inicial do aplicativo web para acompanhar ping, latência, jitter, per
 - Quantidade de pings por medição configurável entre 1 e 20.
 - Medição de latência, perda de pacotes e jitter.
 - Medição opcional de download/upload usando `speedtest-cli`.
+- Medição de velocidade no navegador até o servidor da API; ela não substitui
+  um teste contra servidores próximos, como o Speedtest.
 - Coleta diretamente no tablet/notebook pelo navegador e envio online para a API/Firebase.
 - Identificação do tipo de dispositivo (tablet, notebook ou desktop) e conexão (Wi-Fi ou cabeada).
 - Latência medida contra o servidor principal de pesquisa do Google (`https://www.google.com/`).

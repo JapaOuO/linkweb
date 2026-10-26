@@ -46,7 +46,10 @@ async function measureDownload(signal) {
 }
 
 async function measureUpload(signal) {
-  const data = new Uint8Array(256 * 1024);
+  const data = new Uint8Array(16 * 1024 * 1024);
+  for (let offset = 0; offset < data.length; offset += 65_536) {
+    crypto.getRandomValues(data.subarray(offset, Math.min(offset + 65_536, data.length)));
+  }
   const started = performance.now();
   await fetch(`${API}/api/measurement-upload`, { method: "POST", body: data, cache: "no-store", signal });
   return (data.byteLength * 8) / ((performance.now() - started) / 1000) / 1_000_000;

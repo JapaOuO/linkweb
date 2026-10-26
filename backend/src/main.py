@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
 import os
+import time
 import uuid
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi import Query
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,7 @@ from .monitor import MonitorManager
 
 store = FirebaseStore()
 manager = MonitorManager(store)
+measurement_cache: tuple[float, list[dict]] | None = None
 DOWNLOAD_PAYLOAD = os.urandom(5 * 1024 * 1024)
 
 
@@ -67,16 +69,21 @@ def measurement_download() -> Response:
 
 
 @app.post("/api/measurement-upload")
-def measurement_upload(payload: bytes) -> dict[str, int]:
-    return {"bytes_received": len(payload)}
+async def measurement_upload(request: Request) -> dict[str, int]:
+    received = 0
+    async for chunk in request.stream():
+        received += len(chunk)
+    return {"bytes_received": received}
 
 
 @app.post("/api/client-measurements", status_code=202)
 def receive_client_measurement(measurement: ClientMeasurement) -> dict[str, str]:
+    global measurement_cache
     data = measurement.model_dump(mode="json")
     data["id"] = str(uuid.uuid4())
     try:
         store.save_client_measurement(data)
+        measurement_cache = None
     except FirebaseStoreError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     return {"status": "accepted"}
@@ -84,16 +91,20 @@ def receive_client_measurement(measurement: ClientMeasurement) -> dict[str, str]
 
 @app.delete("/api/client-measurements/{measurement_id}", status_code=204)
 def delete_client_measurement(measurement_id: str) -> None:
+    global measurement_cache
     try:
         store.delete_client_measurement(measurement_id)
+        measurement_cache = None
     except FirebaseStoreError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 
 
 @app.delete("/api/client-measurements", status_code=204)
 def delete_all_client_measurements() -> None:
+    global measurement_cache
     try:
         store.delete_all_client_measurements()
+        measurement_cache = None
     except FirebaseStoreError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 
@@ -104,9 +115,13 @@ def list_client_measurements(
     connection_type: str | None = Query(default=None),
     latency_target: str | None = Query(default=None),
 ) -> list[dict]:
+    global measurement_cache
     try:
-        measurements = store.list_client_measurements()
-    except FirebaseStoreError as error:
+        now = time.monotonic()
+        if measurement_cache is None or now - measurement_cache[0] >= 10:
+            measurement_cache = (now, store.list_client_measurements())
+        measurements = measurement_cache[1]
+    except Exception as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     return [
         item for item in measurements

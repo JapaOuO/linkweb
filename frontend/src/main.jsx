@@ -39,32 +39,31 @@ async function measureLatency(target, signal) {
 }
 
 async function measureDownload(signal) {
-  const requests = 4;
   const started = performance.now();
-  const transfers = await Promise.all(Array.from({ length: requests }, (_, index) =>
-    fetch(`${API}/api/measurement-download?run=${Date.now()}-${index}`, { cache: "no-store", signal })
-      .then((response) => response.arrayBuffer())
-  ));
-  const bytes = transfers.reduce((total, data) => total + data.byteLength, 0);
+  const response = await fetch(`${API}/api/measurement-download?run=${Date.now()}`, {
+    cache: "no-store", signal,
+  });
+  if (!response.ok) throw new Error("Não foi possível medir o download.");
+  const data = await response.arrayBuffer();
+  const bytes = Number(response.headers.get("content-length")) || data.byteLength;
   return (bytes * 8) / ((performance.now() - started) / 1000) / 1_000_000;
 }
 
 async function measureUpload(signal) {
-  const requests = 4;
-  const payloads = Array.from({ length: requests }, () => {
-    const data = new Uint8Array(5 * 1024 * 1024);
-    for (let offset = 0; offset < data.length; offset += 65_536) {
-      crypto.getRandomValues(data.subarray(offset, Math.min(offset + 65_536, data.length)));
-    }
-    return data;
-  });
+  const data = new Uint8Array(5 * 1024 * 1024);
+  for (let offset = 0; offset < data.length; offset += 65_536) {
+    crypto.getRandomValues(data.subarray(offset, Math.min(offset + 65_536, data.length)));
+  }
   const started = performance.now();
-  await Promise.all(payloads.map((data) =>
-    fetch(`${API}/api/measurement-upload?run=${Date.now()}`, {
-      method: "POST", body: data, cache: "no-store", signal,
-    })
-  ));
-  const bytes = payloads.reduce((total, data) => total + data.byteLength, 0);
+  const response = await fetch(`${API}/api/measurement-upload?run=${Date.now()}`, {
+    method: "POST", body: data, cache: "no-store", signal,
+  });
+  if (!response.ok) throw new Error("Não foi possível medir o upload.");
+  const result = await response.json();
+  const bytes = Number(result.bytes_received);
+  if (!Number.isFinite(bytes) || bytes !== data.byteLength) {
+    throw new Error("O servidor não confirmou todos os bytes enviados.");
+  }
   return (bytes * 8) / ((performance.now() - started) / 1000) / 1_000_000;
 }
 

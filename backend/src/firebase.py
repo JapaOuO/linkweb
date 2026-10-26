@@ -36,16 +36,17 @@ class FirebaseStore:
             measurement["id"]
         ).set(measurement)
 
-    def list_client_measurements(self, limit: int = 5000) -> list[dict[str, Any]]:
+    def list_client_measurements(self, limit: int = 500) -> list[dict[str, Any]]:
         collection = self._require_collection()
         documents = (
             collection.document("browser-clients")
             .collection("measurements")
-            .order_by("timestamp", direction="DESCENDING")
             .limit(limit)
             .stream()
         )
-        return [{"id": document.id, **document.to_dict()} for document in documents]
+        measurements = [{"id": document.id, **document.to_dict()} for document in documents]
+        measurements.sort(key=lambda item: str(item.get("timestamp", "")), reverse=True)
+        return measurements[:limit]
 
     def delete_client_measurement(self, measurement_id: str) -> None:
         self._require_collection().document("browser-clients").collection("measurements").document(measurement_id).delete()

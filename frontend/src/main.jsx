@@ -140,10 +140,12 @@ function App() {
     loopTask.current = (async () => {
       try {
         while (token === runToken.current) {
+          const measurementStarted = performance.now();
           await runMeasurement();
           if (token !== runToken.current) return;
+          const remaining = Math.max(0, Number(interval) * 1000 - (performance.now() - measurementStarted));
           await new Promise((resolve) => {
-            const timeout = setTimeout(resolve, Number(interval) * 1000);
+            const timeout = setTimeout(resolve, remaining);
             controller.current?.signal.addEventListener("abort", () => {
               clearTimeout(timeout);
               resolve();

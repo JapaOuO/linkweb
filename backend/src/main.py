@@ -14,7 +14,7 @@ from .monitor import MonitorManager
 
 store = FirebaseStore()
 manager = MonitorManager(store)
-DOWNLOAD_PAYLOAD = os.urandom(16 * 1024 * 1024)
+DOWNLOAD_PAYLOAD = os.urandom(5 * 1024 * 1024)
 
 
 @asynccontextmanager

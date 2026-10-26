@@ -39,20 +39,33 @@ async function measureLatency(target, signal) {
 }
 
 async function measureDownload(signal) {
+  const requests = 4;
   const started = performance.now();
-  const response = await fetch(`${API}/api/measurement-download?ts=${Date.now()}`, { cache: "no-store", signal });
-  const data = await response.arrayBuffer();
-  return (data.byteLength * 8) / ((performance.now() - started) / 1000) / 1_000_000;
+  const transfers = await Promise.all(Array.from({ length: requests }, (_, index) =>
+    fetch(`${API}/api/measurement-download?run=${Date.now()}-${index}`, { cache: "no-store", signal })
+      .then((response) => response.arrayBuffer())
+  ));
+  const bytes = transfers.reduce((total, data) => total + data.byteLength, 0);
+  return (bytes * 8) / ((performance.now() - started) / 1000) / 1_000_000;
 }
 
 async function measureUpload(signal) {
-  const data = new Uint8Array(16 * 1024 * 1024);
-  for (let offset = 0; offset < data.length; offset += 65_536) {
-    crypto.getRandomValues(data.subarray(offset, Math.min(offset + 65_536, data.length)));
-  }
+  const requests = 4;
+  const payloads = Array.from({ length: requests }, () => {
+    const data = new Uint8Array(5 * 1024 * 1024);
+    for (let offset = 0; offset < data.length; offset += 65_536) {
+      crypto.getRandomValues(data.subarray(offset, Math.min(offset + 65_536, data.length)));
+    }
+    return data;
+  });
   const started = performance.now();
-  await fetch(`${API}/api/measurement-upload`, { method: "POST", body: data, cache: "no-store", signal });
-  return (data.byteLength * 8) / ((performance.now() - started) / 1000) / 1_000_000;
+  await Promise.all(payloads.map((data) =>
+    fetch(`${API}/api/measurement-upload?run=${Date.now()}`, {
+      method: "POST", body: data, cache: "no-store", signal,
+    })
+  ));
+  const bytes = payloads.reduce((total, data) => total + data.byteLength, 0);
+  return (bytes * 8) / ((performance.now() - started) / 1000) / 1_000_000;
 }
 
 function App() {

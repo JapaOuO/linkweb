@@ -82,9 +82,9 @@ footer { padding: 0 24px 30px; color: #a1adba; text-align: center; font-size: 11
 footer span { margin: 0 6px; color: #c7d0dc; }
 .dashboard-hero { align-items: center; }
 .data-count { padding: 12px 17px; color: #4779e9; background: #edf3ff; border-radius: 10px; font-size: 13px; font-weight: 700; }
-.filters { display: flex; align-items: flex-end; gap: 14px; margin-bottom: 22px; }
-.filters > div { flex: 1; }
-.filters select { width: 210px; margin-top: 0; }
+.filters { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 14px; margin-bottom: 22px; }
+.filters label { flex: 1 1 150px; min-width: 130px; margin: 0; }
+.filters select, .filters input { width: 100%; margin-top: 7px; }
 .dashboard-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 22px; }
 .chart-card { position: relative; min-height: 220px; padding: 22px; }
 .chart-card h3 { margin: 0; color: #52647e; font-size: 13px; font-weight: 600; }
@@ -110,5 +110,5 @@ td:first-child { color: #253650; font-weight: 700; }
 .loss-row { background: #fff7f7; }
 .loss-cell { color: #c43f4d; font-weight: 800; }
 @media (max-width: 800px) { .content { width: min(100% - 30px, 600px); padding-top: 38px; } .hero { display: block; } .device-badge { margin-top: 22px; } .layout-grid { grid-template-columns: 1fr; } .result-card { min-height: auto; } }
-@media (max-width: 800px) { .dashboard-grid { grid-template-columns: 1fr 1fr; } .filters { align-items: stretch; flex-wrap: wrap; } .filters > div { flex-basis: 100%; } .filters select { flex: 1; width: auto; } }
+@media (max-width: 800px) { .dashboard-grid { grid-template-columns: 1fr 1fr; } .filters { align-items: stretch; } .filters label { flex-basis: 45%; } }
 @media (max-width: 450px) { .topbar { height: 62px; padding: 0 16px; } .brand { font-size: 15px; } nav { margin: 0 8px 0 auto; } nav button { padding: 8px 6px; font-size: 11px; } .connection-pill { font-size: 0; } .connection-pill .status-dot { margin: 0; } .content { width: calc(100% - 24px); } .card { padding: 22px 18px; } .form-row, .metrics, .dashboard-grid { grid-template-columns: 1fr; } h1 { font-size: 31px; } }

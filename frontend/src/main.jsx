@@ -169,7 +169,9 @@ function Collector({ interval, setIntervalValue, samples, setSamples, speed, set
 }
 
 function Dashboard() {
-  const [filters, setFilters] = useState({ device_type: "", connection_type: "" });
+  const [filters, setFilters] = useState({
+    device_type: "", connection_type: "", date_from: "", date_to: "", sort: "newest",
+  });
   const [sort, setSort] = useState("newest");
   const [data, setData] = useState([]);
   const [error, setError] = useState("");
@@ -185,9 +187,19 @@ function Dashboard() {
     const timer = setInterval(load, 5000);
     return () => clearInterval(timer);
   }, [filters]);
-  const sortedData = [...data].sort((a, b) => {
-    const direction = sort === "oldest" ? 1 : -1;
-    return direction * (new Date(a.timestamp) - new Date(b.timestamp));
+  const filteredData = data.filter((item) => {
+    const date = item.timestamp.slice(0, 10);
+    return (!filters.date_from || date >= filters.date_from) &&
+      (!filters.date_to || date <= filters.date_to);
+  });
+  const sortedData = [...filteredData].sort((a, b) => {
+    const metric = sort === "newest" || sort === "oldest" ? "timestamp" : sort.replace(/-(asc|desc)$/, "");
+    const direction = sort === "oldest" || sort.endsWith("-asc") ? 1 : -1;
+    const aValue = metric === "timestamp" ? new Date(a.timestamp).getTime() : metricValue(a, metric);
+    const bValue = metric === "timestamp" ? new Date(b.timestamp).getTime() : metricValue(b, metric);
+    if (!Number.isFinite(aValue)) return 1;
+    if (!Number.isFinite(bValue)) return -1;
+    return direction * (aValue - bValue);
   });
   const recent = sortedData.slice(0, 20).reverse();
   function toggleSelected(id) {
@@ -212,11 +224,29 @@ function Dashboard() {
     if (!response.ok) { setActionError("Não foi possível apagar as medições."); return; }
     setData([]); setSelected([]);
   }
-  return <main className="content"><section className="hero dashboard-hero"><div><p className="eyebrow">VISÃO GERAL</p><h1>Dashboard de rede</h1><p className="hero-text">Analise latência, jitter, perda de pacotes e velocidade por dispositivo.</p></div><span className="data-count">{data.length} medições</span></section>{error && <p className="error-message" role="alert">{error}</p>}<section className="card filters"><select value={filters.device_type} onChange={(e) => setFilters({ ...filters, device_type: e.target.value })}><option value="">Todos os dispositivos</option><option value="tablet">Tablets</option><option value="notebook">Notebooks</option><option value="desktop">Desktops</option></select><select value={filters.connection_type} onChange={(e) => setFilters({ ...filters, connection_type: e.target.value })}><option value="">Todas as conexões</option><option value="wifi">Wi-Fi</option><option value="cabled">Cabeada</option>  </select></section><div className="dashboard-grid"><Chart title="Latência média (ms)" data={recent} field="latency_avg_ms" color="#4779e9" /><Chart title="Jitter (ms)" data={recent} field="jitter_ms" color="#9b73e8" /><Chart title="Download (Mbps)" data={recent} field="download_mbps" color="#1aac80" /><Chart title="Upload (Mbps)" data={recent} field="upload_mbps" color="#ed9b4b" /></div><section className="card table-card"><div className="card-heading"><div><p className="eyebrow">MEDIÇÕES RECEBIDAS</p><h2>Aparelhos monitorados</h2></div><select value={sort} onChange={(e) => setSort(e.target.value)}><option value="newest">Mais recentes primeiro</option><option value="oldest">Mais antigas primeiro</option></select></div><div className="table-wrap"><table>    <thead><tr>  <th>Data e hora</th><th>Tipo</th><th>Conexão</th><th>Latência</th><th>Jitter</th><th>Perda</th><th>Selecionar</th></tr></thead>  <tbody>{sortedData.slice(0, 50).map((item, i) =>   <tr className={packetLoss(item.samples_sent, item.samples_received) > 0 ? "loss-row" : ""} key={`${item.device_id}-${item.timestamp}-${i}`}><td>{formatTimestamp(item.timestamp)}</td><td>{deviceTypeLabel(item.device_type)}</td><td>{connectionTypeLabel(item.connection_type)}</td><td>{item.latency_avg_ms ?? "—"} ms</td><td>{item.jitter_ms ?? "—"} ms</td>      <td className={packetLoss(item.samples_sent, item.samples_received) > 0 ? "loss-cell" : ""}>{packetLoss(item.samples_sent, item.samples_received) ?? "—"}%</td>  <td>  {selectionMode && <input className="row-checkbox" type="checkbox" checked={selected.includes(item.id)} onChange={() => toggleSelected(item.id)} aria-label="Selecionar medição" />}</td></tr>)}</tbody>  </table>{!data.length && <p className="muted empty-table">Nenhuma medição encontrada para os filtros.</p>}</div><div className="bulk-actions">{actionError && <p className="error-message" role="alert">{actionError}</p>}    <button className="delete-button" onClick={removeSelected} disabled={!data.length}>{selectionMode ? "Confirmar exclusão" : "Apagar selecionadas"}</button>{selectionMode && <button className="cancel-button" onClick={() => { setSelectionMode(false); setSelected([]); }}>Cancelar</button>}<button className="delete-all-button" onClick={removeAll} disabled={!data.length}>Apagar tudo</button></div></section></main>;
+  return <main className="content">
+    <section className="hero dashboard-hero"><div><p className="eyebrow">VISÃO GERAL</p><h1>Dashboard de rede</h1><p className="hero-text">Analise latência, jitter, perda de pacotes e velocidade por dispositivo.</p></div><span className="data-count">{filteredData.length} de {data.length} medições</span></section>
+    {error && <p className="error-message" role="alert">{error}</p>}
+    <section className="card filters">
+      <label>Dispositivo<select value={filters.device_type} onChange={(e) => setFilters({ ...filters, device_type: e.target.value })}><option value="">Todos</option><option value="tablet">Tablets</option><option value="notebook">Notebooks</option><option value="desktop">Desktops</option></select></label>
+      <label>Conexão<select value={filters.connection_type} onChange={(e) => setFilters({ ...filters, connection_type: e.target.value })}><option value="">Todas</option><option value="wifi">Wi-Fi</option><option value="cabled">Cabeada</option></select></label>
+      <label>De<input type="date" value={filters.date_from} onChange={(e) => setFilters({ ...filters, date_from: e.target.value })} /></label>
+      <label>Até<input type="date" value={filters.date_to} onChange={(e) => setFilters({ ...filters, date_to: e.target.value })} /></label>
+      <label>Ordenar por<select value={sort} onChange={(e) => setSort(e.target.value)}><option value="newest">Mais recentes</option><option value="oldest">Mais antigas</option><option value="download_mbps-desc">Download mais rápido</option><option value="download_mbps-asc">Download mais lento</option><option value="upload_mbps-desc">Upload mais rápido</option><option value="upload_mbps-asc">Upload mais lento</option><option value="latency_avg_ms-asc">Menor latência</option><option value="latency_avg_ms-desc">Maior latência</option><option value="jitter_ms-asc">Menor jitter</option><option value="jitter_ms-desc">Maior jitter</option><option value="packet_loss_percent-asc">Menor perda</option><option value="packet_loss_percent-desc">Maior perda</option></select></label>
+    </section>
+    <div className="dashboard-grid"><Chart title="Latência média (ms)" data={recent} field="latency_avg_ms" color="#4779e9" /><Chart title="Jitter (ms)" data={recent} field="jitter_ms" color="#9b73e8" /><Chart title="Download (Mbps)" data={recent} field="download_mbps" color="#1aac80" /><Chart title="Upload (Mbps)" data={recent} field="upload_mbps" color="#ed9b4b" /></div>
+    <section className="card table-card"><div className="card-heading"><div><p className="eyebrow">MEDIÇÕES RECEBIDAS</p><h2>Aparelhos monitorados</h2></div><span className="muted">Exibindo até 50 resultados</span></div><div className="table-wrap"><table><thead><tr><th>Data e hora</th><th>Tipo</th><th>Conexão</th><th>Latência</th><th>Jitter</th><th>Perda</th><th>Download</th><th>Upload</th><th>Selecionar</th></tr></thead><tbody>{sortedData.slice(0, 50).map((item, i) => <tr className={packetLoss(item.samples_sent, item.samples_received) > 0 ? "loss-row" : ""} key={`${item.device_id}-${item.timestamp}-${i}`}><td>{formatTimestamp(item.timestamp)}</td><td>{deviceTypeLabel(item.device_type)}</td><td>{connectionTypeLabel(item.connection_type)}</td><td>{formatMetric(item.latency_avg_ms, "ms")}</td><td>{formatMetric(item.jitter_ms, "ms")}</td><td className={packetLoss(item.samples_sent, item.samples_received) > 0 ? "loss-cell" : ""}>{formatMetric(packetLoss(item.samples_sent, item.samples_received), "%")}</td><td>{formatMetric(item.download_mbps, "Mbps")}</td><td>{formatMetric(item.upload_mbps, "Mbps")}</td><td>{selectionMode && <input className="row-checkbox" type="checkbox" checked={selected.includes(item.id)} onChange={() => toggleSelected(item.id)} aria-label="Selecionar medição" />}</td></tr>)}</tbody></table>{!filteredData.length && <p className="muted empty-table">Nenhuma medição encontrada para os filtros.</p>}</div><div className="bulk-actions">{actionError && <p className="error-message" role="alert">{actionError}</p>}<button className="delete-button" onClick={removeSelected} disabled={!filteredData.length}>{selectionMode ? "Confirmar exclusão" : "Apagar selecionadas"}</button>{selectionMode && <button className="cancel-button" onClick={() => { setSelectionMode(false); setSelected([]); }}>Cancelar</button>}<button className="delete-all-button" onClick={removeAll} disabled={!data.length}>Apagar tudo</button></div></section>
+  </main>;
 }
 
 function Chart({ title, data, field, color }) { const values = data.map((item) => item[field]).filter((value) => value !== null); const max = Math.max(...values, 1); return <section className="card chart-card"><h3>{title}</h3><div className="chart">{values.length ? values.map((value, i) => <span key={i} title={`${value}`} style={{ height: `${Math.max((value / max) * 100, 4)}%`, background: color }} />) : <p className="muted">Sem dados</p>}</div><strong className="chart-average">{values.length ? `${(values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)}` : "—"}</strong></section>; }
 function Metric({ label, value, unit, icon }) { return <div className="metric"><span className="metric-icon">{icon}</span><div><small>{label}</small><strong>{value ?? "—"} <em>{unit}</em></strong></div></div>; }
+function formatMetric(value, unit) { return value === null || value === undefined || !Number.isFinite(Number(value)) ? "—" : `${value} ${unit}`; }
+function metricValue(item, metric) {
+  if (metric === "packet_loss_percent") return packetLoss(item.samples_sent, item.samples_received);
+  if (item[metric] === null || item[metric] === undefined) return null;
+  return Number(item[metric]);
+}
 function formatTimestamp(timestamp) {
   if (!timestamp) return "—";
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium" }).format(new Date(timestamp));

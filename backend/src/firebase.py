@@ -4,8 +4,12 @@ from typing import Any
 from .config import settings
 
 
+class FirebaseStoreError(RuntimeError):
+    """Raised when Firebase persistence is unavailable."""
+
+
 class FirebaseStore:
-    """Persists measurements when Firebase credentials are configured."""
+    """Persists measurements in Firestore."""
 
     def __init__(self) -> None:
         self._collection = None
@@ -25,18 +29,17 @@ class FirebaseStore:
         self._collection = firestore.client().collection("network_measurements")
 
     def save_measurement(self, measurement: dict[str, Any]) -> None:
-        if self._collection is not None:
-            self._collection.document(measurement["monitor_id"]).collection("measurements").add(measurement)
+        self._require_collection().document(measurement["monitor_id"]).collection("measurements").add(measurement)
 
     def save_client_measurement(self, measurement: dict[str, Any]) -> None:
-        if self._collection is not None:
-            self._collection.document("browser-clients").collection("measurements").add(measurement)
+        self._require_collection().document("browser-clients").collection("measurements").document(
+            measurement["id"]
+        ).set(measurement)
 
-    def list_client_measurements(self, limit: int = 500) -> list[dict[str, Any]]:
-        if self._collection is None:
-            return []
+    def list_client_measurements(self, limit: int = 5000) -> list[dict[str, Any]]:
+        collection = self._require_collection()
         documents = (
-            self._collection.document("browser-clients")
+            collection.document("browser-clients")
             .collection("measurements")
             .order_by("timestamp", direction="DESCENDING")
             .limit(limit)
@@ -45,12 +48,16 @@ class FirebaseStore:
         return [{"id": document.id, **document.to_dict()} for document in documents]
 
     def delete_client_measurement(self, measurement_id: str) -> None:
-        if self._collection is not None:
-            self._collection.document("browser-clients").collection("measurements").document(measurement_id).delete()
+        self._require_collection().document("browser-clients").collection("measurements").document(measurement_id).delete()
 
     def delete_all_client_measurements(self) -> None:
-        if self._collection is None:
-            return
-        documents = self._collection.document("browser-clients").collection("measurements").stream()
+        documents = self._require_collection().document("browser-clients").collection("measurements").stream()
         for document in documents:
             document.reference.delete()
+
+    def _require_collection(self):
+        if self._collection is None:
+            raise FirebaseStoreError(
+                "Firebase não está configurado. Defina FIREBASE_CREDENTIALS_FILE ou FIREBASE_CREDENTIALS_JSON."
+            )
+        return self._collection

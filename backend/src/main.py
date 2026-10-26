@@ -7,23 +7,12 @@ from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .firebase import FirebaseStore
+from .firebase import FirebaseStore, FirebaseStoreError
 from .models import ClientMeasurement, MonitorCreateRequest, MonitorStatus
 from .monitor import MonitorManager
 
 store = FirebaseStore()
 manager = MonitorManager(store)
-recent_measurements: list[dict] = []
-
-
-def get_measurement_id(item: dict) -> str:
-    if "id" not in item:
-        item["id"] = str(uuid.uuid5(uuid.NAMESPACE_URL, "|".join([
-            str(item.get("device_id", "")),
-            str(item.get("timestamp", "")),
-            str(item.get("samples_sent", "")),
-        ])))
-    return item["id"]
 
 
 @asynccontextmanager
@@ -77,25 +66,27 @@ def measurement_upload(payload: bytes) -> dict[str, int]:
 def receive_client_measurement(measurement: ClientMeasurement) -> dict[str, str]:
     data = measurement.model_dump(mode="json")
     data["id"] = str(uuid.uuid4())
-    recent_measurements.append(data)
-    del recent_measurements[:-5000]
-    store.save_client_measurement(data)
+    try:
+        store.save_client_measurement(data)
+    except FirebaseStoreError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
     return {"status": "accepted"}
 
 
 @app.delete("/api/client-measurements/{measurement_id}", status_code=204)
 def delete_client_measurement(measurement_id: str) -> None:
-    global recent_measurements
-    for item in recent_measurements:
-        get_measurement_id(item)
-    recent_measurements = [item for item in recent_measurements if item["id"] != measurement_id]
-    store.delete_client_measurement(measurement_id)
+    try:
+        store.delete_client_measurement(measurement_id)
+    except FirebaseStoreError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
 
 @app.delete("/api/client-measurements", status_code=204)
 def delete_all_client_measurements() -> None:
-    recent_measurements.clear()
-    store.delete_all_client_measurements()
+    try:
+        store.delete_all_client_measurements()
+    except FirebaseStoreError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
 
 @app.get("/api/client-measurements")
@@ -104,9 +95,10 @@ def list_client_measurements(
     connection_type: str | None = Query(default=None),
     latency_target: str | None = Query(default=None),
 ) -> list[dict]:
-    measurements = recent_measurements or store.list_client_measurements()
-    for item in measurements:
-        get_measurement_id(item)
+    try:
+        measurements = store.list_client_measurements()
+    except FirebaseStoreError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
     return [
         item for item in measurements
         if (not device_type or item["device_type"] == device_type)

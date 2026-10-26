@@ -114,6 +114,10 @@ https://seu-projeto.vercel.app
 
 Para salvar medições no Firebase, copie `.env.example` para `.env` e informe
 `FIREBASE_CREDENTIALS_FILE` com o caminho da chave de uma conta de serviço.
+Em produção, configure `FIREBASE_CREDENTIALS_JSON` no ambiente da API. A API
+não aceita uma medição como salva quando o Firebase não está configurado ou
+indisponível: nesse caso, retorna erro `503` para evitar que dados temporários
+sejam exibidos e desapareçam após reinícios.
 
 O frontend está preparado para o projeto Firebase `webeduc-6e7ed`. Copie
 `frontend/.env.example` para `frontend/.env` antes de executar o Vite. A

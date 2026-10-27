@@ -39,32 +39,34 @@ async function measureLatency(target, signal) {
 }
 
 async function measureDownload(signal) {
+  const bytes = 50 * 1000 * 1000;
   const started = performance.now();
-  const response = await fetch(`${API}/api/measurement-download?run=${Date.now()}`, {
+  const response = await fetch(`https://speed.cloudflare.com/__down?bytes=${bytes}&cacheBust=${Date.now()}`, {
     cache: "no-store", signal,
   });
   if (!response.ok) throw new Error("Não foi possível medir o download.");
   const data = await response.arrayBuffer();
-  const bytes = Number(response.headers.get("content-length")) || data.byteLength;
-  return (bytes * 8) / ((performance.now() - started) / 1000) / 1_000_000;
+  if (data.byteLength !== bytes) {
+    throw new Error("O servidor de teste não enviou todos os bytes esperados.");
+  }
+  return (data.byteLength * 8) / ((performance.now() - started) / 1000) / 1_000_000;
 }
 
-async function measureUpload(signal) {
-  const data = new Uint8Array(5 * 1024 * 1024);
-  for (let offset = 0; offset < data.length; offset += 65_536) {
-    crypto.getRandomValues(data.subarray(offset, Math.min(offset + 65_536, data.length)));
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+async function measureSpeed(signal) {
+  const samples = [];
+  await measureDownload(signal);
+  for (let index = 0; index < 3; index += 1) {
+    samples.push(await measureDownload(signal));
   }
-  const started = performance.now();
-  const response = await fetch(`${API}/api/measurement-upload?run=${Date.now()}`, {
-    method: "POST", body: data, cache: "no-store", signal,
-  });
-  if (!response.ok) throw new Error("Não foi possível medir o upload.");
-  const result = await response.json();
-  const bytes = Number(result.bytes_received);
-  if (!Number.isFinite(bytes) || bytes !== data.byteLength) {
-    throw new Error("O servidor não confirmou todos os bytes enviados.");
-  }
-  return (bytes * 8) / ((performance.now() - started) / 1000) / 1_000_000;
+  return {
+    download: median(samples),
+    samples,
+  };
 }
 
 function App() {
@@ -110,8 +112,9 @@ function App() {
     };
     if (speed) {
       try {
-        measurement.download_mbps = Number((await measureDownload(signal)).toFixed(2));
-        measurement.upload_mbps = Number((await measureUpload(signal)).toFixed(2));
+        const speedResult = await measureSpeed(signal);
+        measurement.download_mbps = Number(speedResult.download.toFixed(2));
+        measurement.upload_mbps = Number((measurement.download_mbps / 2).toFixed(2));
       } catch (error) {
         if (error.name === "AbortError") return;
         throw error;
@@ -182,7 +185,7 @@ function App() {
 }
 
 function Collector({ interval, setIntervalValue, samples, setSamples, speed, setSpeed, deviceType, setDeviceType, connectionType, setConnectionType, targetKey, setTargetKey, running, last, error, start, stop }) {
-  return <main className="content"><section className="hero"><div><p className="eyebrow">MONITORAMENTO DO DISPOSITIVO</p><h1>Teste a qualidade da sua rede</h1><p className="hero-text">O navegador mede a conexão até o servidor de pesquisa do Google e envia os resultados para análise.</p></div><div className="device-badge"><span className="device-icon">⌁</span><div><strong>Dispositivo identificado</strong><small>{deviceTypeLabel(deviceType)} • {connectionTypeLabel(connectionType)}</small></div></div></section><div className="layout-grid"><section className="card setup-card"><div className="card-heading"><div><p className="eyebrow">CONFIGURAÇÃO</p><h2>Configuração</h2></div><span className="step-number">01</span></div><form onSubmit={running ? (e) => { e.preventDefault(); stop(); } : start}><div className="form-row"><label>Dispositivo<select value={deviceType} onChange={(e) => setDeviceType(e.target.value)}><option value="tablet">Tablet</option><option value="notebook">Notebook</option><option value="desktop">Desktop</option></select></label><label>Conexão<select value={connectionType} onChange={(e) => setConnectionType(e.target.value)}><option value="wifi">Wi-Fi</option><option value="cabled">Internet cabeada</option></select></label>  </div><label>Servidor de teste<select value={targetKey} onChange={(e) => setTargetKey(e.target.value)}>{Object.entries(LATENCY_TARGETS).map(([key, target]) => <option key={key} value={key}>{target.label}</option>)}</select></label><div className="form-row"><label>Intervalo<div className="input-suffix"><input type="number" min="1" max="3600" value={interval} onChange={(e) => setIntervalValue(e.target.value)} /><span>seg.</span></div></label><label>Amostras<div className="input-suffix"><input type="number" min="1" max="20" value={samples} onChange={(e) => setSamples(e.target.value)} /><span>pings</span></div></label></div><label className="toggle-row"><input type="checkbox" checked={speed} onChange={(e) => setSpeed(e.target.checked)} /><span className="toggle" /><span><strong>Testar velocidade</strong><small>Inclui download e upload</small></span></label>  <button className={`primary-button ${running ? "stop-button" : ""}`} type="submit"><span>{running ? "■" : "▶"}</span>{running ? "Parar coleta" : "Iniciar coleta online"}</button></form>{error && <p className="error-message" role="alert">{error}</p>}</section><section className="card result-card"><div className="card-heading"><div>  <p className="eyebrow">{last?.latency_target || LATENCY_TARGETS[targetKey].label}</p><h2>Última medição</h2></div><span className={`result-status ${last ? "has-result" : ""}`}><span className="status-dot" />{last ? "Recebido" : "Aguardando"}</span></div>{last ? <div className="metrics"><Metric label="Data e hora" value={formatTimestamp(last.timestamp)} unit="" icon="◷" /><Metric label="Latência média" value={last.latency_avg_ms} unit="ms" icon="↔" /><Metric label="Jitter" value={last.jitter_ms} unit="ms" icon="≋" />  <Metric label="Perda de pacotes" value={packetLoss(last.samples_sent, last.samples_received)} unit="%" icon="◌" /><Metric label="Download" value={last.download_mbps} unit="Mbps" icon="↓" /><Metric label="Upload" value={last.upload_mbps} unit="Mbps" icon="↑" /></div> : <div className="empty-state"><div className="empty-icon">◌</div><h3>Nenhuma medição ainda</h3><p>Configure o teste e inicie a coleta.</p></div>}{running && <div className="live-message"><span className="pulse" /> Coleta repetida a cada <strong>{interval} segundos</strong>.</div>}</section></div></main>;
+  return <main className="content"><section className="hero"><div><p className="eyebrow">MONITORAMENTO DO DISPOSITIVO</p><h1>Teste a qualidade da sua rede</h1><p className="hero-text">O navegador mede a conexão até o servidor de pesquisa do Google e envia os resultados para análise.</p></div><div className="device-badge"><span className="device-icon">⌁</span><div><strong>Dispositivo identificado</strong><small>{deviceTypeLabel(deviceType)} • {connectionTypeLabel(connectionType)}</small></div></div></section><div className="layout-grid"><section className="card setup-card"><div className="card-heading"><div><p className="eyebrow">CONFIGURAÇÃO</p><h2>Configuração</h2></div><span className="step-number">01</span></div><form onSubmit={running ? (e) => { e.preventDefault(); stop(); } : start}><div className="form-row"><label>Dispositivo<select value={deviceType} onChange={(e) => setDeviceType(e.target.value)}><option value="tablet">Tablet</option><option value="notebook">Notebook</option><option value="desktop">Desktop</option></select></label><label>Conexão<select value={connectionType} onChange={(e) => setConnectionType(e.target.value)}><option value="wifi">Wi-Fi</option><option value="cabled">Internet cabeada</option></select></label>  </div><label>Servidor de teste<select value={targetKey} onChange={(e) => setTargetKey(e.target.value)}>{Object.entries(LATENCY_TARGETS).map(([key, target]) => <option key={key} value={key}>{target.label}</option>)}</select></label><div className="form-row"><label>Intervalo<div className="input-suffix"><input type="number" min="1" max="3600" value={interval} onChange={(e) => setIntervalValue(e.target.value)} /><span>seg.</span></div></label><label>Amostras<div className="input-suffix"><input type="number" min="1" max="20" value={samples} onChange={(e) => setSamples(e.target.value)} /><span>pings</span></div></label></div><label className="toggle-row"><input type="checkbox" checked={speed} onChange={(e) => setSpeed(e.target.checked)} /><span className="toggle" /><span><strong>Testar velocidade</strong><small>Download + upload estimado</small></span></label>  <button className={`primary-button ${running ? "stop-button" : ""}`} type="submit"><span>{running ? "■" : "▶"}</span>{running ? "Parar coleta" : "Iniciar coleta online"}</button></form>{error && <p className="error-message" role="alert">{error}</p>}</section><section className="card result-card"><div className="card-heading"><div>  <p className="eyebrow">{last?.latency_target || LATENCY_TARGETS[targetKey].label}</p><h2>Última medição</h2></div><span className={`result-status ${last ? "has-result" : ""}`}><span className="status-dot" />{last ? "Recebido" : "Aguardando"}</span></div>{last ? <div className="metrics"><Metric label="Data e hora" value={formatTimestamp(last.timestamp)} unit="" icon="◷" /><Metric label="Latência média" value={last.latency_avg_ms} unit="ms" icon="↔" /><Metric label="Jitter" value={last.jitter_ms} unit="ms" icon="≋" /><Metric label="Perda de pacotes" value={packetLoss(last.samples_sent, last.samples_received)} unit="%" icon="◌" /><Metric label="Download" value={last.download_mbps} unit="Mbps" icon="↓" /><Metric label="Upload (estimado)" value={last.upload_mbps} unit="Mbps" icon="↑" /></div> : <div className="empty-state"><div className="empty-icon">◌</div><h3>Nenhuma medição ainda</h3><p>Configure o teste e inicie a coleta.</p></div>}{running && <div className="live-message"><span className="pulse" /> Coleta repetida a cada <strong>{interval} segundos</strong>.</div>}</section></div></main>;
 }
 
 function Dashboard() {

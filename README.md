@@ -23,6 +23,11 @@ Estrutura inicial do aplicativo web para acompanhar ping, latência, jitter, per
 - Medição opcional de download/upload usando `speedtest-cli`.
 - Medição de velocidade no navegador até o servidor da API; ela não substitui
   um teste contra servidores próximos, como o Speedtest.
+- O teste web usa o endpoint de download do Cloudflare com 50 MB; o upload
+  exibido no modo web é uma estimativa de 50% do download, conforme a
+  assimetria definida para este ambiente, e não uma medição direta.
+- Para reduzir o efeito do aquecimento da conexão, cada ciclo descarta um
+  primeiro download e calcula a mediana de três downloads seguintes.
 - Coleta diretamente no tablet/notebook pelo navegador e envio online para a API/Firebase.
 - Identificação do tipo de dispositivo (tablet, notebook ou desktop) e conexão (Wi-Fi ou cabeada).
 - Latência medida contra o servidor principal de pesquisa do Google (`https://www.google.com/`).

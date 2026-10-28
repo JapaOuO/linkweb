@@ -195,9 +195,10 @@ function Collector({ interval, setIntervalValue, samples, setSamples, speed, set
 
 function Dashboard() {
   const [filters, setFilters] = useState({
-    device_type: "", connection_type: "", date_from: "", date_to: "", sort: "newest",
+    device_type: "", connection_type: "", date_from: "", date_to: "", week: currentIsoWeekKey(),
   });
   const [sort, setSort] = useState("newest");
+  const [page, setPage] = useState(1);
   const [data, setData] = useState([]);
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -215,7 +216,8 @@ function Dashboard() {
   const filteredData = data.filter((item) => {
     const date = item.timestamp.slice(0, 10);
     return (!filters.date_from || date >= filters.date_from) &&
-      (!filters.date_to || date <= filters.date_to);
+      (!filters.date_to || date <= filters.date_to) &&
+      (!filters.week || isoWeekKey(new Date(item.timestamp)) === filters.week);
   });
   const sortedData = [...filteredData].sort((a, b) => {
     const metric = sort === "newest" || sort === "oldest" ? "timestamp" : sort.replace(/-(asc|desc)$/, "");
@@ -226,7 +228,17 @@ function Dashboard() {
     if (!Number.isFinite(bValue)) return -1;
     return direction * (aValue - bValue);
   });
+  const pageSize = 50;
+  const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageData = sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const recent = sortedData.slice(0, 20).reverse();
+  const weekOptions = [...new Set([currentIsoWeekKey(), ...data.map((item) => isoWeekKey(new Date(item.timestamp)))])]
+    .sort().reverse().map((key) => ({ key, label: isoWeekLabel(key) }));
+  function updateFilters(next) {
+    setFilters(next);
+    setPage(1);
+  }
   function toggleSelected(id) {
     setSelected((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]);
   }
@@ -253,20 +265,21 @@ function Dashboard() {
     <section className="hero dashboard-hero"><div><p className="eyebrow">VISÃO GERAL</p><h1>Dashboard de rede</h1><p className="hero-text">Analise latência, jitter, perda de pacotes e velocidade por dispositivo.</p></div><span className="data-count">{filteredData.length} de {data.length} medições</span></section>
     {error && <p className="error-message" role="alert">{error}</p>}
     <section className="card filters">
-      <label>Dispositivo<select value={filters.device_type} onChange={(e) => setFilters({ ...filters, device_type: e.target.value })}><option value="">Todos</option><option value="tablet">Tablets</option><option value="notebook">Notebooks</option><option value="desktop">Desktops</option></select></label>
-      <label>Conexão<select value={filters.connection_type} onChange={(e) => setFilters({ ...filters, connection_type: e.target.value })}><option value="">Todas</option><option value="wifi">Wi-Fi</option><option value="cabled">Cabeada</option></select></label>
-      <label>De<input type="date" value={filters.date_from} onChange={(e) => setFilters({ ...filters, date_from: e.target.value })} /></label>
-      <label>Até<input type="date" value={filters.date_to} onChange={(e) => setFilters({ ...filters, date_to: e.target.value })} /></label>
+      <label>Semana<select value={filters.week} onChange={(e) => updateFilters({ ...filters, week: e.target.value })}><option value="">Todas as semanas</option>{weekOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label>
+      <label>Dispositivo<select value={filters.device_type} onChange={(e) => updateFilters({ ...filters, device_type: e.target.value })}><option value="">Todos</option><option value="tablet">Tablets</option><option value="notebook">Notebooks</option><option value="desktop">Desktops</option></select></label>
+      <label>Conexão<select value={filters.connection_type} onChange={(e) => updateFilters({ ...filters, connection_type: e.target.value })}><option value="">Todas</option><option value="wifi">Wi-Fi</option><option value="cabled">Cabeada</option></select></label>
+      <label>De<input type="date" value={filters.date_from} onChange={(e) => updateFilters({ ...filters, date_from: e.target.value })} /></label>
+      <label>Até<input type="date" value={filters.date_to} onChange={(e) => updateFilters({ ...filters, date_to: e.target.value })} /></label>
       <label>Ordenar por<select value={sort} onChange={(e) => setSort(e.target.value)}><option value="newest">Mais recentes</option><option value="oldest">Mais antigas</option><option value="download_mbps-desc">Download mais rápido</option><option value="download_mbps-asc">Download mais lento</option><option value="upload_mbps-desc">Upload mais rápido</option><option value="upload_mbps-asc">Upload mais lento</option><option value="latency_avg_ms-asc">Menor latência</option><option value="latency_avg_ms-desc">Maior latência</option><option value="jitter_ms-asc">Menor jitter</option><option value="jitter_ms-desc">Maior jitter</option><option value="packet_loss_percent-asc">Menor perda</option><option value="packet_loss_percent-desc">Maior perda</option></select></label>
     </section>
     <div className="dashboard-grid"><Chart title="Latência média (ms)" data={recent} field="latency_avg_ms" color="#4779e9" /><Chart title="Jitter (ms)" data={recent} field="jitter_ms" color="#9b73e8" /><Chart title="Download (Mbps)" data={recent} field="download_mbps" color="#1aac80" /><Chart title="Upload (Mbps)" data={recent} field="upload_mbps" color="#ed9b4b" /></div>
-    <Heatmap data={filteredData} />
-    <section className="card table-card"><div className="card-heading"><div><p className="eyebrow">MEDIÇÕES RECEBIDAS</p><h2>Aparelhos monitorados</h2></div><span className="muted">Exibindo até 500 resultados</span></div><div className="table-wrap"><table><thead><tr><th>Data e hora</th><th>Tipo</th><th>Conexão</th><th>Latência</th><th>Jitter</th><th>Perda</th><th>Download</th><th>Upload</th><th>Selecionar</th></tr></thead><tbody>{sortedData.slice(0, 500).map((item, i) => <tr className={packetLoss(item.samples_sent, item.samples_received) > 0 ? "loss-row" : ""} key={`${item.device_id}-${item.timestamp}-${i}`}><td>{formatTimestamp(item.timestamp)}</td><td>{deviceTypeLabel(item.device_type)}</td><td>{connectionTypeLabel(item.connection_type)}</td><td>{formatMetric(item.latency_avg_ms, "ms")}</td><td>{formatMetric(item.jitter_ms, "ms")}</td><td className={packetLoss(item.samples_sent, item.samples_received) > 0 ? "loss-cell" : ""}>{formatMetric(packetLoss(item.samples_sent, item.samples_received), "%")}</td><td>{formatMetric(item.download_mbps, "Mbps")}</td><td>{formatMetric(item.upload_mbps, "Mbps")}</td><td>{selectionMode && <input className="row-checkbox" type="checkbox" checked={selected.includes(item.id)} onChange={() => toggleSelected(item.id)} aria-label="Selecionar medição" />}</td></tr>)}</tbody></table>{!filteredData.length && <p className="muted empty-table">Nenhuma medição encontrada para os filtros.</p>}</div><div className="bulk-actions">{actionError && <p className="error-message" role="alert">{actionError}</p>}<button className="delete-button" onClick={removeSelected} disabled={!filteredData.length}>{selectionMode ? "Confirmar exclusão" : "Apagar selecionadas"}</button>{selectionMode && <button className="cancel-button" onClick={() => { setSelectionMode(false); setSelected([]); }}>Cancelar</button>}<button className="delete-all-button" onClick={removeAll} disabled={!data.length}>Apagar todo o histórico</button></div></section>
+    <Heatmap data={filteredData} weekLabel={filters.week ? isoWeekLabel(filters.week) : "Todas as semanas"} />
+    <section className="card table-card"><div className="card-heading"><div><p className="eyebrow">MEDIÇÕES RECEBIDAS</p><h2>Aparelhos monitorados</h2></div><span className="muted">{sortedData.length ? `Página ${currentPage} de ${totalPages}` : "Nenhum resultado"}</span></div><div className="table-wrap"><table><thead><tr><th>Data e hora</th><th>Tipo</th><th>Conexão</th><th>Latência</th><th>Jitter</th><th>Perda</th><th>Download</th><th>Upload</th><th>Selecionar</th></tr></thead><tbody>{pageData.map((item, i) => <tr className={packetLoss(item.samples_sent, item.samples_received) > 0 ? "loss-row" : ""} key={`${item.device_id}-${item.timestamp}-${i}`}><td>{formatTimestamp(item.timestamp)}</td><td>{deviceTypeLabel(item.device_type)}</td><td>{connectionTypeLabel(item.connection_type)}</td><td>{formatMetric(item.latency_avg_ms, "ms")}</td><td>{formatMetric(item.jitter_ms, "ms")}</td><td className={packetLoss(item.samples_sent, item.samples_received) > 0 ? "loss-cell" : ""}>{formatMetric(packetLoss(item.samples_sent, item.samples_received), "%")}</td><td>{formatMetric(item.download_mbps, "Mbps")}</td><td>{formatMetric(item.upload_mbps, "Mbps")}</td><td>{selectionMode && <input className="row-checkbox" type="checkbox" checked={selected.includes(item.id)} onChange={() => toggleSelected(item.id)} aria-label="Selecionar medição" />}</td></tr>)}</tbody></table>{!filteredData.length && <p className="muted empty-table">Nenhuma medição encontrada para os filtros.</p>}</div><div className="table-pagination"><button onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={currentPage === 1}>Anterior</button><span>{sortedData.length ? `${(currentPage - 1) * pageSize + 1}-${Math.min(currentPage * pageSize, sortedData.length)} de ${sortedData.length}` : "0 resultados"}</span><button onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={currentPage === totalPages}>Próxima</button></div><div className="bulk-actions">{actionError && <p className="error-message" role="alert">{actionError}</p>}<button className="delete-button" onClick={removeSelected} disabled={!filteredData.length}>{selectionMode ? "Confirmar exclusão" : "Apagar selecionadas"}</button>{selectionMode && <button className="cancel-button" onClick={() => { setSelectionMode(false); setSelected([]); }}>Cancelar</button>}<button className="delete-all-button" onClick={removeAll} disabled={!data.length}>Apagar todo o histórico</button></div></section>
   </main>;
 }
 
 function Chart({ title, data, field, color }) { const values = data.map((item) => item[field]).filter((value) => value !== null); const max = Math.max(...values, 1); return <section className="card chart-card"><h3>{title}</h3><div className="chart">{values.length ? values.map((value, i) => <span key={i} title={`${value}`} style={{ height: `${Math.max((value / max) * 100, 4)}%`, background: color }} />) : <p className="muted">Sem dados</p>}</div><strong className="chart-average">{values.length ? `${(values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)}` : "—"}</strong></section>; }
-function Heatmap({ data }) {
+function Heatmap({ data, weekLabel }) {
   const [metric, setMetric] = useState("download_mbps");
   const metricInfo = {
     download_mbps: { label: "Download", unit: "Mbps", higherIsBetter: true },
@@ -298,7 +311,7 @@ function Heatmap({ data }) {
     return `hsl(${Math.round(135 - quality * 115)} 72% ${Math.round(76 - quality * 18)}%)`;
   }
   return <section className="card heatmap-card">
-    <div className="card-heading"><div><p className="eyebrow">QUALIDADE POR HORÁRIO</p><h2>Mapa de qualidade do horário</h2><p className="muted">Média das medições por dia da semana e hora local.</p></div><select className="heatmap-select" value={metric} onChange={(event) => setMetric(event.target.value)}>{Object.entries({ download_mbps: "Download", upload_mbps: "Upload", latency_avg_ms: "Latência", jitter_ms: "Jitter", loss: "Perda de pacotes" }).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+    <div className="card-heading"><div><p className="eyebrow">HORÁRIOS DA SEMANA</p><h2>Mapa de Horários</h2><p className="muted">{weekLabel} • média por dia da semana e hora local.</p></div><select className="heatmap-select" value={metric} onChange={(event) => setMetric(event.target.value)}>{Object.entries({ download_mbps: "Download", upload_mbps: "Upload", latency_avg_ms: "Latência", jitter_ms: "Jitter", loss: "Perda de pacotes" }).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
     <div className="heatmap-scroll"><div className="heatmap"><div className="heatmap-corner" />{Array.from({ length: 24 }, (_, hour) => <span className="heatmap-hour" key={hour}>{String(hour).padStart(2, "0")}h</span>)}{days.map((day, dayIndex) => <React.Fragment key={day}><span className="heatmap-day">{day}</span>{Array.from({ length: 24 }, (_, hour) => { const index = dayIndex * 24 + hour; const value = averages[index]; return <span className="heatmap-cell" key={hour} title={value === null ? `${day}, ${hour}h: sem dados` : `${day}, ${hour}h: ${value.toFixed(2)} ${metricInfo.unit} (${cells[index].length} medição${cells[index].length === 1 ? "" : "ões"})`} style={{ background: color(value) }}>{value === null ? "" : value.toFixed(1)}</span>; })}</React.Fragment>)}</div></div>
     {!values.length && <p className="muted">Ainda não há medições para montar o mapa.</p>}
   </section>;
@@ -313,6 +326,29 @@ function metricValue(item, metric) {
 function formatTimestamp(timestamp) {
   if (!timestamp) return "—";
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium" }).format(new Date(timestamp));
+}
+function isoWeekKey(date) {
+  const value = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = value.getUTCDay() || 7;
+  value.setUTCDate(value.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(value.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((value - yearStart) / 86400000) + 1) / 7);
+  return `${value.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+function currentIsoWeekKey() {
+  return isoWeekKey(new Date());
+}
+function isoWeekLabel(key) {
+  const match = key.match(/^(\d{4})-W(\d{2})$/);
+  if (!match) return key;
+  const year = Number(match[1]);
+  const week = Number(match[2]);
+  const januaryFourth = new Date(year, 0, 4);
+  const monday = new Date(januaryFourth);
+  monday.setDate(januaryFourth.getDate() - (januaryFourth.getDay() || 7) + 1 + (week - 1) * 7);
+  const month = new Intl.DateTimeFormat("pt-BR", { month: "long" }).format(monday);
+  const weekOfMonth = Math.ceil(monday.getDate() / 7);
+  return `Semana ${week} • ${weekOfMonth}ª semana de ${month} de ${year}`;
 }
 function deviceTypeLabel(type) { return { tablet: "Tablet", notebook: "Notebook", desktop: "Desktop" }[type] || "Dispositivo"; }
 function connectionTypeLabel(type) { return { wifi: "Wi-Fi", cabled: "Cabeada", unknown: "Não informada" }[type] || "Não informada"; }

@@ -28,6 +28,9 @@ Estrutura inicial do aplicativo web para acompanhar ping, latência, jitter, per
   assimetria definida para este ambiente, e não uma medição direta.
 - Para reduzir o efeito do aquecimento da conexão, cada ciclo descarta um
   primeiro download e calcula a mediana de três downloads seguintes.
+- A coleta pode medir com frequência alta, mas persiste no Firebase no máximo
+  uma medição a cada 10 segundos por dispositivo. O dashboard atualiza a cada
+  60 segundos e reutiliza a leitura em cache para reduzir o consumo de cota.
 - Coleta diretamente no tablet/notebook pelo navegador e envio online para a API/Firebase.
 - Identificação do tipo de dispositivo (tablet, notebook ou desktop) e conexão (Wi-Fi ou cabeada).
 - Latência medida contra o servidor principal de pesquisa do Google (`https://www.google.com/`).

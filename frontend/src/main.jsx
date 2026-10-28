@@ -84,6 +84,7 @@ function App() {
   const controller = useRef(null);
   const runToken = useRef(0);
   const runningRef = useRef(false);
+  const lastPersistedAt = useRef(0);
 
   async function runMeasurement() {
     const token = runToken.current;
@@ -123,14 +124,18 @@ function App() {
     if (token !== runToken.current) return;
     let response;
     try {
-      response = await fetch(`${API}/api/client-measurements`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(measurement), signal,
-      });
+      const shouldPersist = Date.now() - lastPersistedAt.current >= 10_000;
+      if (shouldPersist) {
+        response = await fetch(`${API}/api/client-measurements`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(measurement), signal,
+        });
+        if (!response.ok) throw new Error("Não foi possível salvar a medição.");
+        lastPersistedAt.current = Date.now();
+      }
     } catch (error) {
       if (error.name === "AbortError") return;
       throw new Error(connectionError());
     }
-    if (!response.ok) throw new Error("Não foi possível enviar a medição.");
     setLast(measurement);
   }
 
@@ -204,7 +209,7 @@ function Dashboard() {
       .then((items) => { setData(items); setError(""); })
       .catch(() => setError(`Não foi possível carregar os dados da API em ${API}.`));
     load();
-    const timer = setInterval(load, 5000);
+    const timer = setInterval(load, 60000);
     return () => clearInterval(timer);
   }, [filters]);
   const filteredData = data.filter((item) => {
@@ -256,7 +261,7 @@ function Dashboard() {
     </section>
     <div className="dashboard-grid"><Chart title="Latência média (ms)" data={recent} field="latency_avg_ms" color="#4779e9" /><Chart title="Jitter (ms)" data={recent} field="jitter_ms" color="#9b73e8" /><Chart title="Download (Mbps)" data={recent} field="download_mbps" color="#1aac80" /><Chart title="Upload (Mbps)" data={recent} field="upload_mbps" color="#ed9b4b" /></div>
     <Heatmap data={filteredData} />
-    <section className="card table-card"><div className="card-heading"><div><p className="eyebrow">MEDIÇÕES RECEBIDAS</p><h2>Aparelhos monitorados</h2></div><span className="muted">Exibindo até 50 resultados</span></div><div className="table-wrap"><table><thead><tr><th>Data e hora</th><th>Tipo</th><th>Conexão</th><th>Latência</th><th>Jitter</th><th>Perda</th><th>Download</th><th>Upload</th><th>Selecionar</th></tr></thead><tbody>{sortedData.slice(0, 50).map((item, i) => <tr className={packetLoss(item.samples_sent, item.samples_received) > 0 ? "loss-row" : ""} key={`${item.device_id}-${item.timestamp}-${i}`}><td>{formatTimestamp(item.timestamp)}</td><td>{deviceTypeLabel(item.device_type)}</td><td>{connectionTypeLabel(item.connection_type)}</td><td>{formatMetric(item.latency_avg_ms, "ms")}</td><td>{formatMetric(item.jitter_ms, "ms")}</td><td className={packetLoss(item.samples_sent, item.samples_received) > 0 ? "loss-cell" : ""}>{formatMetric(packetLoss(item.samples_sent, item.samples_received), "%")}</td><td>{formatMetric(item.download_mbps, "Mbps")}</td><td>{formatMetric(item.upload_mbps, "Mbps")}</td><td>{selectionMode && <input className="row-checkbox" type="checkbox" checked={selected.includes(item.id)} onChange={() => toggleSelected(item.id)} aria-label="Selecionar medição" />}</td></tr>)}</tbody></table>{!filteredData.length && <p className="muted empty-table">Nenhuma medição encontrada para os filtros.</p>}</div><div className="bulk-actions">{actionError && <p className="error-message" role="alert">{actionError}</p>}<button className="delete-button" onClick={removeSelected} disabled={!filteredData.length}>{selectionMode ? "Confirmar exclusão" : "Apagar selecionadas"}</button>{selectionMode && <button className="cancel-button" onClick={() => { setSelectionMode(false); setSelected([]); }}>Cancelar</button>}<button className="delete-all-button" onClick={removeAll} disabled={!data.length}>Apagar tudo</button></div></section>
+    <section className="card table-card"><div className="card-heading"><div><p className="eyebrow">MEDIÇÕES RECEBIDAS</p><h2>Aparelhos monitorados</h2></div><span className="muted">Exibindo até 500 resultados</span></div><div className="table-wrap"><table><thead><tr><th>Data e hora</th><th>Tipo</th><th>Conexão</th><th>Latência</th><th>Jitter</th><th>Perda</th><th>Download</th><th>Upload</th><th>Selecionar</th></tr></thead><tbody>{sortedData.slice(0, 500).map((item, i) => <tr className={packetLoss(item.samples_sent, item.samples_received) > 0 ? "loss-row" : ""} key={`${item.device_id}-${item.timestamp}-${i}`}><td>{formatTimestamp(item.timestamp)}</td><td>{deviceTypeLabel(item.device_type)}</td><td>{connectionTypeLabel(item.connection_type)}</td><td>{formatMetric(item.latency_avg_ms, "ms")}</td><td>{formatMetric(item.jitter_ms, "ms")}</td><td className={packetLoss(item.samples_sent, item.samples_received) > 0 ? "loss-cell" : ""}>{formatMetric(packetLoss(item.samples_sent, item.samples_received), "%")}</td><td>{formatMetric(item.download_mbps, "Mbps")}</td><td>{formatMetric(item.upload_mbps, "Mbps")}</td><td>{selectionMode && <input className="row-checkbox" type="checkbox" checked={selected.includes(item.id)} onChange={() => toggleSelected(item.id)} aria-label="Selecionar medição" />}</td></tr>)}</tbody></table>{!filteredData.length && <p className="muted empty-table">Nenhuma medição encontrada para os filtros.</p>}</div><div className="bulk-actions">{actionError && <p className="error-message" role="alert">{actionError}</p>}<button className="delete-button" onClick={removeSelected} disabled={!filteredData.length}>{selectionMode ? "Confirmar exclusão" : "Apagar selecionadas"}</button>{selectionMode && <button className="cancel-button" onClick={() => { setSelectionMode(false); setSelected([]); }}>Cancelar</button>}<button className="delete-all-button" onClick={removeAll} disabled={!data.length}>Apagar todo o histórico</button></div></section>
   </main>;
 }
 

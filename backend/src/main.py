@@ -118,7 +118,7 @@ def list_client_measurements(
     global measurement_cache
     try:
         now = time.monotonic()
-        if measurement_cache is None or now - measurement_cache[0] >= 10:
+        if measurement_cache is None or now - measurement_cache[0] >= 60:
             measurement_cache = (now, store.list_client_measurements())
         measurements = measurement_cache[1]
     except Exception as error:

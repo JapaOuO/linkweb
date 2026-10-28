@@ -13,6 +13,7 @@ class FirebaseStore:
 
     def __init__(self) -> None:
         self._collection = None
+        self._client = None
         if not settings.firebase_credentials_file and not settings.firebase_credentials_json:
             return
 
@@ -26,7 +27,8 @@ class FirebaseStore:
 
         if not firebase_admin._apps:
             firebase_admin.initialize_app(credential)
-        self._collection = firestore.client().collection("network_measurements")
+        self._client = firestore.client()
+        self._collection = self._client.collection("network_measurements")
 
     def save_measurement(self, measurement: dict[str, Any]) -> None:
         self._require_collection().document(measurement["monitor_id"]).collection("measurements").add(measurement)
@@ -52,9 +54,21 @@ class FirebaseStore:
         self._require_collection().document("browser-clients").collection("measurements").document(measurement_id).delete()
 
     def delete_all_client_measurements(self) -> None:
-        documents = self._require_collection().document("browser-clients").collection("measurements").stream()
-        for document in documents:
-            document.reference.delete()
+        collection = self._require_collection().document("browser-clients").collection("measurements")
+        client = self._client
+        if client is None:
+            raise FirebaseStoreError("Cliente do Firebase não está disponível.")
+        batch = client.batch()
+        pending = 0
+        for document in collection.stream():
+            batch.delete(document.reference)
+            pending += 1
+            if pending == 450:
+                batch.commit()
+                batch = client.batch()
+                pending = 0
+        if pending:
+            batch.commit()
 
     def _require_collection(self):
         if self._collection is None:
